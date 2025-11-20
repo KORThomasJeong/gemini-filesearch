@@ -2,7 +2,8 @@
 
 Google Gemini API의 File Search 기능을 활용한 강력한 시맨틱 검색 및 채팅 웹 애플리케이션입니다. 문서를 업로드하고, 출처 인용 및 문맥 검색 기능이 포함된 자연어 대화를 통해 문서 내용을 쉽게 파악할 수 있습니다.
 
-![Gemini File Search UI](https://via.placeholder.com/800x450?text=Gemini+File+Search+Preview)
+![Main Interface](client/src/screenshot/main.png)
+![Chat Interface](client/src/screenshot/chat.png)
 
 ## 주요 기능
 
@@ -28,7 +29,7 @@ Google Gemini API의 File Search 기능을 활용한 강력한 시맨틱 검색 
 - **🛠️ 기술 스택**:
   - **Frontend**: React, Vite, Tailwind CSS, Lucide Icons.
   - **Backend**: Node.js, Express.
-  - **AI**: Google Gemini API (`gemini-1.5-flash` / `gemini-2.5-flash`).
+  - **AI**: Google Gemini API (`gemini-2.5-flash` / `gemini-2.5-pro`).
   - **Deployment**: Docker & Docker Compose.
 
 ## 사전 요구 사항

@@ -239,7 +239,7 @@ const ChatInterface = ({ onSendMessage, isSearching, className = "w-full", onClo
                         <div className="flex justify-between items-center mb-4">
                             <h3 className="text-lg font-bold text-gray-900 dark:text-white flex items-center gap-2">
                                 <FileText size={20} className="text-blue-500" />
-                                Source Content
+                                {modalData.title}
                             </h3>
                             <button onClick={closeModal} className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200">
                                 <X size={20} />

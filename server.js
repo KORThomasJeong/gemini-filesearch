@@ -3,16 +3,102 @@ const cors = require('cors');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
-const FileSearchManager = require('./FileSearchManager');
-
+const jwt = require('jsonwebtoken');
 require('dotenv').config();
+
+const FileSearchManager = require('./FileSearchManager');
+const userManager = require('./UserManager');
 
 const app = express();
 const port = process.env.PORT || 3000;
+const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-this';
 
 // Middleware
 app.use(cors());
 app.use(express.json());
+app.use(express.static(path.join(__dirname, 'client/dist')));
+
+// Authentication Middleware
+const authenticateToken = (req, res, next) => {
+    const authHeader = req.headers['authorization'];
+    const token = authHeader && authHeader.split(' ')[1];
+
+    if (!token) return res.sendStatus(401);
+
+    jwt.verify(token, JWT_SECRET, (err, user) => {
+        if (err) return res.sendStatus(403);
+        req.user = user;
+        next();
+    });
+};
+
+// Admin Middleware
+const requireAdmin = (req, res, next) => {
+    if (req.user.role !== 'admin') return res.sendStatus(403);
+    next();
+};
+
+// --- Auth Routes ---
+
+app.post('/api/auth/register', async (req, res) => {
+    try {
+        const { username, password } = req.body;
+        if (!username || !password) return res.status(400).json({ error: 'Username and password required' });
+
+        const user = await userManager.createUser(username, password);
+        res.json({ message: 'User created', user });
+    } catch (error) {
+        res.status(400).json({ error: error.message });
+    }
+});
+
+app.post('/api/auth/login', async (req, res) => {
+    try {
+        const { username, password } = req.body;
+        const user = await userManager.authenticate(username, password);
+
+        if (!user) return res.status(401).json({ error: 'Invalid credentials' });
+        if (!user.approved) return res.status(403).json({ error: 'Account pending approval' });
+
+        const token = jwt.sign({ id: user.id, username: user.username, role: user.role }, JWT_SECRET, { expiresIn: '24h' });
+        res.json({ token, user });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+app.get('/api/auth/me', authenticateToken, (req, res) => {
+    res.json(req.user);
+});
+
+// --- Admin Routes ---
+
+app.get('/api/admin/users', authenticateToken, requireAdmin, (req, res) => {
+    const users = userManager.getAllUsers();
+    res.json(users);
+});
+
+app.post('/api/admin/approve', authenticateToken, requireAdmin, async (req, res) => {
+    try {
+        const { userId } = req.body;
+        await userManager.approveUser(userId);
+        res.json({ message: 'User approved' });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+app.post('/api/admin/reset-password', authenticateToken, requireAdmin, async (req, res) => {
+    try {
+        const { userId, newPassword } = req.body;
+        await userManager.resetPassword(userId, newPassword);
+        res.json({ message: 'Password reset successful' });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// --- File Search Routes (Protected) ---
 
 // Initialize FileSearchManager
 const apiKey = process.env.GEMINI_API_KEY;
@@ -22,12 +108,24 @@ if (!apiKey) {
 const fileSearchManager = new FileSearchManager(apiKey);
 
 // Configure Multer for file uploads
-const upload = multer({ dest: 'uploads/' });
+const storage = multer.diskStorage({
+    destination: (req, file, cb) => {
+        const uploadDir = 'uploads/';
+        if (!fs.existsSync(uploadDir)) {
+            fs.mkdirSync(uploadDir);
+        }
+        cb(null, uploadDir);
+    },
+    filename: (req, file, cb) => {
+        cb(null, Date.now() + '-' + file.originalname); // Keep original name safe
+    }
+});
+const upload = multer({ storage });
 
 // API Routes
 
 // List all stores
-app.get('/api/stores', async (req, res) => {
+app.get('/api/stores', authenticateToken, async (req, res) => {
     try {
         const stores = await fileSearchManager.listStores();
         res.json(stores);
@@ -38,7 +136,7 @@ app.get('/api/stores', async (req, res) => {
 });
 
 // Create a new store
-app.post('/api/stores', async (req, res) => {
+app.post('/api/stores', authenticateToken, async (req, res) => {
     try {
         const { displayName } = req.body;
         if (!displayName) {
@@ -53,7 +151,7 @@ app.post('/api/stores', async (req, res) => {
 });
 
 // Delete a store
-app.delete('/api/stores/:name(*)', async (req, res) => {
+app.delete('/api/stores/:name(*)', authenticateToken, async (req, res) => {
     try {
         const storeName = req.params.name;
         await fileSearchManager.deleteStore(storeName);
@@ -65,7 +163,7 @@ app.delete('/api/stores/:name(*)', async (req, res) => {
 });
 
 // List files in a store
-app.get('/api/stores/:name(*)/files', async (req, res) => {
+app.get('/api/stores/:name(*)/files', authenticateToken, async (req, res) => {
     try {
         const storeName = req.params.name;
         const files = await fileSearchManager.listDocuments(storeName);
@@ -78,7 +176,7 @@ app.get('/api/stores/:name(*)/files', async (req, res) => {
 });
 
 // Upload a file to a store
-app.post('/api/stores/:name(*)/files', upload.single('file'), async (req, res) => {
+app.post('/api/stores/:name(*)/files', authenticateToken, upload.single('file'), async (req, res) => {
     try {
         const storeName = req.params.name;
         const file = req.file;
@@ -124,7 +222,7 @@ app.post('/api/stores/:name(*)/files', upload.single('file'), async (req, res) =
 });
 
 // Delete a file (document)
-app.delete('/api/files/:name(*)', async (req, res) => {
+app.delete('/api/files/:name(*)', authenticateToken, async (req, res) => {
     try {
         const documentName = req.params.name;
         await fileSearchManager.deleteDocument(documentName);
@@ -136,7 +234,7 @@ app.delete('/api/files/:name(*)', async (req, res) => {
 });
 
 // Chat with Gemini using File Search
-app.post('/api/chat', async (req, res) => {
+app.post('/api/chat', authenticateToken, async (req, res) => {
     try {
         const { query, storeNames, model } = req.body;
         if (!query || !storeNames) {
@@ -144,6 +242,7 @@ app.post('/api/chat', async (req, res) => {
         }
 
         const result = await fileSearchManager.search(query, storeNames, model);
+        console.log('Search result grounding metadata:', JSON.stringify(result.groundingMetadata, null, 2));
         res.json(result);
     } catch (error) {
         console.error('Error searching:', error);
@@ -161,5 +260,5 @@ app.get('*', (req, res) => {
 });
 
 app.listen(port, () => {
-    console.log(`Server is running on port ${port}`);
+    console.log(`Server is running on port ${port} `);
 });
